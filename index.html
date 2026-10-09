@@ -432,6 +432,8 @@ border-radius:18px;box-shadow:var(--shadow-lg);padding:22px 20px 18px;
 .field.dis input,.field.dis select{pointer-events:none}
 .venchint{font-size:12.5px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-bottom:12px}
 .venchint b{color:var(--text)}
+.ultpag{font-size:13px;color:var(--muted);margin:-4px 0 14px}
+.ultpag b{color:var(--text);font-weight:700}
 /* ---------- Calendar ---------- */
 .calhead{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:6px}
 .calhead span{text-align:center;font-size:10.5px;font-weight:700;color:var(--faint);text-transform:uppercase}
@@ -934,7 +936,7 @@ document.getElementById("sheetTitle").textContent = c ? "Editar cliente" : "Novo
 const paid = c ? isPaid(c) : false;
 const body = document.getElementById("sheetBody");
 body.innerHTML = `
-${(c&&temData(c))?`<div class="venchint">Pacote por tempo determinado · vence em <b>${fmtData(c.venceEm)}</b>. Para renovar, altere a data de vencimento abaixo.</div>`:""}
+${(c&&temData(c))?`<div class="venchint">Pacote por tempo determinado · vence em <b>${fmtData(c.venceEm)}</b>. Para renovar, altere a data de vencimento abaixo — a renovação fica registrada como último pagamento.</div>`:""}
 ${(c&&!temData(c))?`<button class="recvbtn ${paid?'paid undo':''}" id="recvBtn">
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${paid?'<path d="M20 6L9 17l-5-5"/>':'<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'}</svg>
 ${paid ? (c.pagoAdiantado?'Plano ativo — desfazer':'Recebido ✓ — desfazer') : (mesDevido(c)?'Marcar pagamento atrasado recebido':'Marcar pagamento recebido')}</button>
@@ -979,13 +981,7 @@ ${c?`<a class="wabtn ${waNumero(c.telefone)?"":"off"}" id="waBtn" target="_blank
 <div class="field" id="fldDia"><label>Dia vencimento</label><input type="number" id="fDia" min="1" max="31" value="${c?c.dia:todayDay()}"></div>
 <div class="field"><label>Valor cobrado (R$)</label><input type="number" id="fValor" min="0" step="1" value="${c?c.valor:35}"></div>
 </div>
-<div class="field" style="margin-bottom:6px"><label>Último pagamento realizado</label>
-<div class="row2">
-<input type="date" id="fPgData" aria-label="Data do último pagamento" value="${c&&c.ultPagData?esc(c.ultPagData):""}">
-<input type="number" id="fPgValor" aria-label="Valor do último pagamento" min="0" step="0.01" placeholder="Valor (R$)" value="${c&&c.ultPagValor!=null&&c.ultPagValor!==""?c.ultPagValor:""}">
-</div>
-<div class="wahint" style="margin-bottom:10px">${c&&c.ultPagData?`Pago <b>${brl(c.ultPagValor)}</b> em <b>${fmtData(c.ultPagData)}</b>. `:""}Preenchido sozinho ao marcar o pagamento; você também pode digitar.</div>
-</div>
+${c?`<div class="ultpag">${c.ultPagData?`Último pagamento: <b>${brl(c.ultPagValor)}</b> em <b>${fmtData(c.ultPagData)}</b>`:"Último pagamento: nenhum registrado"}</div>`:""}
 <div class="field"><label>Lucro por mês</label>
 <div class="lucrohint" id="lucroHint" style="margin-top:0"></div>
 </div>
@@ -1118,8 +1114,6 @@ if(macRuim){ toast("MAC incompleto"+(macRuim.nome?" em "+macRuim.nome:"")+" — 
 const data={
 nome, dia: porData ? Number(venceEm.slice(8,10)) : Math.min(31,Math.max(1,+document.getElementById("fDia").value||1)),
 apps, venceEm,
-ultPagData: document.getElementById("fPgData").value || "",
-ultPagValor: document.getElementById("fPgValor").value!=="" ? (+document.getElementById("fPgValor").value||0) : (document.getElementById("fPgData").value ? valor : ""),
 tipo:ui.tipo, plano:ui.plano, provedor:document.getElementById("fProv").value,
 valor, custo, lucro:valor-custo, obs:document.getElementById("fObs").value.trim(),
 situacao:ui.situacao,
@@ -1127,15 +1121,16 @@ telefone:document.getElementById("fTel").value.replace(/\D/g,""),
 };
 if(ui.editId){
 const alvo=db.clients.find(x=>x.id===ui.editId);
-const eraData=temData(alvo);
+const eraData=temData(alvo), dataAntes=alvo.venceEm||"";
 Object.assign(alvo, data);
+if(porData && venceEm!==dataAntes){ alvo.ultPagData=todayStr(); alvo.ultPagValor=valor; }
 if(porData){ alvo.pagoAte=venceEm.slice(0,7); alvo.pagoAdiantado=false; delete alvo.inadDesde; }
 else if(eraData){ alvo.pagoAte=addMonths(curMonth(),-1); }   // voltou para plano mensal: mês atual fica em aberto até marcar o pagamento
 toast("Cliente atualizado"); }
 else {
 const id=Math.max(0,...db.clients.map(c=>c.id))+1;
 const meses=planoMeses(data.plano); // novo cliente começa em dia pelo período do plano
-db.clients.push({id, ...data, pagamentos:{}, pagoAte: porData ? venceEm.slice(0,7) : addMonths(curMonth(), meses-1), pagoAdiantado:false, creditosDebitados:0, lista:"NOVO"});
+db.clients.push({id, ...data, pagamentos:{}, pagoAte: porData ? venceEm.slice(0,7) : addMonths(curMonth(), meses-1), pagoAdiantado:false, creditosDebitados:0, lista:"NOVO", ...(porData?{ultPagData:todayStr(), ultPagValor:valor}:{})});
 toast("Cliente cadastrado ✓");
 }
 save(); renderAll(); closeSheet();
