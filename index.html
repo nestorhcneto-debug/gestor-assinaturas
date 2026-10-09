@@ -409,6 +409,29 @@ border-radius:18px;box-shadow:var(--shadow-lg);padding:22px 20px 18px;
 .wabtn svg{width:18px;height:18px}
 .wabtn.off{background:var(--surface-3);color:var(--faint);pointer-events:none}
 .wahint{font-size:11.5px;color:var(--faint);margin-top:6px}
+/* ---------- Apps do cliente / vencimento por data ---------- */
+.appsbtn{width:100%;display:flex;align-items:center;gap:10px;padding:12px;border-radius:11px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-weight:700;font-size:14px;text-align:left}
+.appsbtn svg{width:19px;height:19px;color:var(--brand);flex:none}
+.appsbtn .cnt{margin-left:auto;font-size:11px;font-weight:800;background:var(--brand-soft);color:var(--brand-ink);border-radius:999px;padding:2px 9px}
+.appsbtn .chev{width:15px;height:15px;color:var(--muted);transition:transform .2s}
+.appsbtn.open .chev{transform:rotate(180deg)}
+.appspanel{display:none;margin-top:9px}
+.appspanel.open{display:block}
+.appitem{background:var(--surface-2);border:1px solid var(--border);border-radius:13px;padding:11px;margin-bottom:9px;display:flex;flex-direction:column;gap:8px}
+.appitem .apphead{display:flex;align-items:center;gap:8px}
+.appitem .apphead input{flex:1;min-width:0;font-weight:700}
+.appitem label{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);display:block;margin-bottom:4px}
+.field .appitem input[type=text]{background:var(--surface)}
+.appitem input.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.03em}
+.appdel{width:42px;height:42px;flex:none;border-radius:10px;display:grid;place-items:center;background:var(--bad-bg);color:var(--bad-ink)}
+.appdel svg{width:17px;height:17px}
+.appadd{width:100%;padding:11px;border-radius:11px;border:1.5px dashed var(--border-strong);color:var(--brand-ink);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center;gap:7px}
+.appadd svg{width:16px;height:16px}
+.field input[type=date]{width:100%;padding:12px;border-radius:11px;background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
+.field.dis{opacity:.45}
+.field.dis input,.field.dis select{pointer-events:none}
+.venchint{font-size:12.5px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-bottom:12px}
+.venchint b{color:var(--text)}
 /* ---------- Calendar ---------- */
 .calhead{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:6px}
 .calhead span{text-align:center;font-size:10.5px;font-weight:700;color:var(--faint);text-transform:uppercase}
@@ -646,7 +669,7 @@ return d;
 let ui = { filter:"todos", search:"", sort:"dia", editId:null, tipo:"IPTV", situacao:"ativo", prov:"", plano:PLANOS[0] };
 // Clientes sem histórico de pagamento que já estão atrasados: grava o mês para a inadimplência não sumir na virada.
 function marcarInadSemHistorico(){ try{ let ch=false; const cm=curMonth();
-db.clients.forEach(c=>{ if(c.situacao!=="cancelado" && !c.pagoAdiantado && !paidUntil(c) && !c.inadDesde && c.dia<todayDay()){ c.inadDesde=cm; ch=true; } });
+db.clients.forEach(c=>{ if(c.situacao!=="cancelado" && !temData(c) && !c.pagoAdiantado && !paidUntil(c) && !c.inadDesde && c.dia<todayDay()){ c.inadDesde=cm; ch=true; } });
 if(ch){ save(); } }catch(e){} }
 /*==================== WHATSAPP ====================*/
 // Normaliza para formato internacional (só dígitos). Número BR sem DDI (10/11 dígitos) ganha 55 na frente.
@@ -727,13 +750,26 @@ if(c.pagoAte) return c.pagoAte;
 if(c.pagamentos){ const ms=Object.keys(c.pagamentos).filter(k=>c.pagamentos[k]); if(ms.length) return ms.sort().pop(); }
 return null;
 }
+// Vencimento por DATA ESPECÍFICA (pacote por tempo determinado): c.venceEm = "AAAA-MM-DD"
+function temData(c){ return !!(c && c.venceEm && /^\d{4}-\d{2}-\d{2}$/.test(c.venceEm)); }
+function fmtData(ds){ const [y,m,d]=String(ds).split("-"); return d+"/"+m+"/"+y; }
+function diasAte(ds){ const [y,m,d]=ds.split("-").map(Number); const h=new Date(); h.setHours(0,0,0,0); return Math.round((new Date(y,m-1,d)-h)/86400000); }
+// MAC no formato XX:XX:XX:XX:XX:XX (maiúsculas, 12 caracteres)
+function fmtMac(v){ const s=String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,12); return (s.match(/.{1,2}/g)||[]).join(":"); }
 function isPaid(c){
 if(c.situacao==="cancelado") return false;
+if(temData(c)) return diasAte(c.venceEm)>=0;
 if(c.pagoAdiantado) return true;
 const pu=paidUntil(c); return !!pu && pu>=curMonth();
 }
 function cobranca(c){
 if(c.situacao==="cancelado") return {k:"cancelado", tone:"cancel", lbl:"Cancelado"};
+if(temData(c)){
+const df=diasAte(c.venceEm);
+if(df<0) return {k:"atrasado", tone:"bad", lbl:"Vencido há "+(-df)+"d"};
+if(df<=2) return {k:"vencer", tone:"warn", lbl: df===0?"Vence hoje":("Vence em "+df+"d")};
+return {k:"emdia", tone:"good", lbl:"Até "+fmtData(c.venceEm).slice(0,6)+c.venceEm.slice(2,4)};
+}
 if(isPaid(c)){
 const pu=paidUntil(c);
 let lbl = c.pagoAdiantado ? "Plano ativo" : "Em dia";
@@ -763,7 +799,7 @@ return {k:"aberto", tone:"neutro", lbl:"Vence dia "+c.dia}; // não pago e ainda
 // Inadimplente = ativo, não pago e vencimento já passou. A vencer = só faltando 2 dias ou menos.
 // 1º mês em aberto de um mês ANTERIOR (dívida antiga) ou null se não houver.
 function mesDevido(c){
-if(c.situacao==="cancelado"||c.pagoAdiantado) return null;
+if(c.situacao==="cancelado"||c.pagoAdiantado||temData(c)) return null;
 const pu=paidUntil(c), cm=curMonth();
 if(pu && pu < addMonths(cm,-1)) return addMonths(pu,1);
 if(!pu && c.inadDesde && c.inadDesde < cm) return c.inadDesde;
@@ -831,7 +867,7 @@ const f = FILTERS.find(x=>x.id===ui.filter) || FILTERS[0];
 let arr = db.clients.filter(f.test);
 if(ui.search){
 const q = ui.search.toLowerCase();
-arr = arr.filter(c=> c.nome.toLowerCase().includes(q) || (c.provedor||"").toLowerCase().includes(q) || (c.obs||"").toLowerCase().includes(q) || (q.replace(/\D/g,"").length>=3 && (c.telefone||"").includes(q.replace(/\D/g,""))));
+arr = arr.filter(c=> c.nome.toLowerCase().includes(q) || (c.provedor||"").toLowerCase().includes(q) || (c.obs||"").toLowerCase().includes(q) || (c.apps||[]).some(a=>((a.nome||"")+" "+(a.mac||"")+" "+(a.key||"")).toLowerCase().includes(q)) || (q.replace(/\D/g,"").length>=3 && (c.telefone||"").includes(q.replace(/\D/g,""))));
 }
 const rank = {atrasado:0,hoje:1,vencer:2,emdia:3,cancelado:4};
 arr.sort((a,b)=>{
@@ -863,7 +899,8 @@ html += `<div class="card s-${s.k}" role="button" tabindex="0" data-id="${c.id}"
 <span class="cname"><span class="nm">${esc(c.nome)}</span><span class="badge ${c.tipo==="P2P"?"b-p2p":"b-iptv"}">${c.tipo}</span></span>
 <span class="cmeta">
 <span class="prov" style="color:${provColor(c.provedor)}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="2" y="7" width="20" height="13" rx="2"/><path d="M7 7V5a5 5 0 0 1 10 0v2"/></svg>${esc(c.provedor||"—")}</span>
-<span class="sep"></span><span>Dia ${c.dia}</span>
+<span class="sep"></span><span>${temData(c)?"Vence "+fmtData(c.venceEm):"Dia "+c.dia}</span>
+${(c.apps&&c.apps.length)?`<span class="sep"></span><span>${c.apps.length} app${c.apps.length>1?"s":""}</span>`:""}
 ${c.obs?`<span class="sep"></span><span>${esc(c.obs)}</span>`:""}
 </span>
 </span>
@@ -889,12 +926,16 @@ ui.tipo = c? c.tipo : "IPTV";
 ui.situacao = c? (c.situacao||"ativo") : "ativo";
 ui.prov = c? c.provedor : (db.provedores[0]||"");
 ui.plano = c? (c.plano||PLANOS[0]) : PLANOS[0];
+ui.venc = (c && temData(c)) ? "data" : "mensal";
+ui.apps = c && Array.isArray(c.apps) ? c.apps.map(a=>({nome:a.nome||"",mac:a.mac||"",key:a.key||""})) : [];
+ui.appsOpen = false;
 ui.custo = c ? (+c.custo||0) : (db.provValores[ui.prov]!=null ? +db.provValores[ui.prov] : 0); // custo vem do provedor
 document.getElementById("sheetTitle").textContent = c ? "Editar cliente" : "Novo cliente";
 const paid = c ? isPaid(c) : false;
 const body = document.getElementById("sheetBody");
 body.innerHTML = `
-${c?`<button class="recvbtn ${paid?'paid undo':''}" id="recvBtn">
+${(c&&temData(c))?`<div class="venchint">Pacote por tempo determinado · vence em <b>${fmtData(c.venceEm)}</b>. Para renovar, altere a data de vencimento abaixo.</div>`:""}
+${(c&&!temData(c))?`<button class="recvbtn ${paid?'paid undo':''}" id="recvBtn">
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${paid?'<path d="M20 6L9 17l-5-5"/>':'<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'}</svg>
 ${paid ? (c.pagoAdiantado?'Plano ativo — desfazer':'Recebido ✓ — desfazer') : (mesDevido(c)?'Marcar pagamento atrasado recebido':'Marcar pagamento recebido')}</button>
 ${(!paid && c.ultimoPag && c.ultimoPag.ym===curMonth())?`<button class="undolast" id="undoLast">Pagamento de atraso registrado este mês — desfazer</button>`:""}`:""}
@@ -906,6 +947,10 @@ ${c?`<a class="wabtn ${waNumero(c.telefone)?"":"off"}" id="waBtn" target="_blank
 </div>
 <div class="wahint">Com DDD. Números sem código do país são tratados como Brasil (+55).</div>
 </div>
+<div class="field">
+<button type="button" class="appsbtn" id="appsBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Aplicativos do cliente<span class="cnt" id="appsCnt"></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+<div class="appspanel" id="appsPanel"></div>
+</div>
 <div class="field"><label>Tipo de acesso</label>
 <div class="seg" id="segTipo">
 <button data-t="IPTV" class="${ui.tipo==='IPTV'?'on':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>IPTV</button>
@@ -915,12 +960,31 @@ ${c?`<a class="wabtn ${waNumero(c.telefone)?"":"off"}" id="waBtn" target="_blank
 <div class="field"><label>Provedor de acesso</label>
 <select id="fProv">${db.provedores.map(p=>`<option ${p===ui.prov?"selected":""}>${esc(p)}</option>`).join("")}</select>
 </div>
-<div class="field"><label>Tipo de plano</label>
-<select id="fPlano">${PLANOS.map(p=>`<option ${ui.plano===p?"selected":""}>${p}</option>`).join("")}</select>
+<div class="field"><label>Tipo de vencimento</label>
+<div class="seg" id="segVenc">
+<button type="button" data-v="mensal" class="${ui.venc==='mensal'?'on':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>Plano mensal</button>
+<button type="button" data-v="data" class="${ui.venc==='data'?'on':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Data específica</button>
+</div>
+<div class="wahint">Escolha só uma opção: plano que se renova todo mês, ou pacote com data certa para vencer.</div>
 </div>
 <div class="row2">
-<div class="field"><label>Dia vencimento</label><input type="number" id="fDia" min="1" max="31" value="${c?c.dia:todayDay()}"></div>
+<div class="field" id="fldPlano"><label>Tipo de plano</label>
+<select id="fPlano">${PLANOS.map(p=>`<option ${ui.plano===p?"selected":""}>${p}</option>`).join("")}</select>
+</div>
+<div class="field" id="fldData"><label>Vence em (data)</label>
+<input type="date" id="fVenceEm" value="${(c&&temData(c))?c.venceEm:""}">
+</div>
+</div>
+<div class="row2">
+<div class="field" id="fldDia"><label>Dia vencimento</label><input type="number" id="fDia" min="1" max="31" value="${c?c.dia:todayDay()}"></div>
 <div class="field"><label>Valor cobrado (R$)</label><input type="number" id="fValor" min="0" step="1" value="${c?c.valor:35}"></div>
+</div>
+<div class="field" style="margin-bottom:6px"><label>Último pagamento realizado</label>
+<div class="row2">
+<input type="date" id="fPgData" aria-label="Data do último pagamento" value="${c&&c.ultPagData?esc(c.ultPagData):""}">
+<input type="number" id="fPgValor" aria-label="Valor do último pagamento" min="0" step="0.01" placeholder="Valor (R$)" value="${c&&c.ultPagValor!=null&&c.ultPagValor!==""?c.ultPagValor:""}">
+</div>
+<div class="wahint" style="margin-bottom:10px">${c&&c.ultPagData?`Pago <b>${brl(c.ultPagValor)}</b> em <b>${fmtData(c.ultPagData)}</b>. `:""}Preenchido sozinho ao marcar o pagamento; você também pode digitar.</div>
 </div>
 <div class="field"><label>Lucro por mês</label>
 <div class="lucrohint" id="lucroHint" style="margin-top:0"></div>
@@ -949,13 +1013,44 @@ t.oninput=()=>{ const l=waLink(c,t.value); w.href=l||"#"; w.classList.toggle("of
 document.querySelectorAll("#segTipo button").forEach(b=>b.onclick=()=>{ui.tipo=b.dataset.t;document.querySelectorAll("#segTipo button").forEach(x=>x.classList.toggle("on",x===b));});
 document.querySelectorAll("#segSit button").forEach(b=>b.onclick=()=>{ui.situacao=b.dataset.s;document.querySelectorAll("#segSit button").forEach(x=>x.classList.toggle("on",x===b));});
 document.getElementById("fPlano").onchange=e=>ui.plano=e.target.value;
+// --- tipo de vencimento: só uma opção ativa por vez ---
+const applyVenc=()=>{
+const d=ui.venc==="data";
+document.querySelectorAll("#segVenc button").forEach(x=>x.classList.toggle("on",x.dataset.v===ui.venc));
+document.getElementById("fldPlano").classList.toggle("dis",d); document.getElementById("fPlano").disabled=d;
+document.getElementById("fldDia").classList.toggle("dis",d); document.getElementById("fDia").disabled=d;
+document.getElementById("fldData").classList.toggle("dis",!d); document.getElementById("fVenceEm").disabled=!d;
+};
+document.querySelectorAll("#segVenc button").forEach(b=>b.onclick=()=>{ ui.venc=b.dataset.v; applyVenc(); });
+applyVenc();
+// --- aplicativos do cliente ---
+const readApps=()=>{ document.querySelectorAll("#appsPanel .appitem").forEach((el,i)=>{ if(!ui.apps[i]) return;
+ui.apps[i].nome=el.querySelector(".aNome").value; ui.apps[i].mac=el.querySelector(".aMac").value; ui.apps[i].key=el.querySelector(".aKey").value; }); };
+const renderApps=()=>{
+const n=ui.apps.filter(a=>(a.nome||a.mac||a.key||"").trim()).length;
+document.getElementById("appsCnt").textContent = n ? n : "nenhum";
+document.getElementById("appsBtn").classList.toggle("open",ui.appsOpen);
+const p=document.getElementById("appsPanel"); p.classList.toggle("open",ui.appsOpen);
+p.innerHTML = ui.apps.map((a,i)=>`<div class="appitem">
+<div><label>Nome do app</label><div class="apphead"><input type="text" class="aNome" value="${esc(a.nome)}" placeholder="Ex: IBO Player" autocapitalize="words" spellcheck="false">
+<button type="button" class="appdel" data-i="${i}" aria-label="Remover app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button></div></div>
+<div><label>MAC</label><input type="text" class="aMac mono" value="${esc(a.mac)}" maxlength="17" placeholder="E8:C1:07:E9:GE:86" autocapitalize="characters" autocomplete="off" spellcheck="false"></div>
+<div><label>Key</label><input type="text" class="aKey mono" value="${esc(a.key)}" placeholder="Chave do app" autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+</div>`).join("") + `<button type="button" class="appadd" id="appAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Adicionar app</button>`;
+p.querySelectorAll(".aMac").forEach(inp=>inp.oninput=()=>{ inp.value=fmtMac(inp.value); });
+p.querySelectorAll(".appdel").forEach(b=>b.onclick=()=>{ readApps(); ui.apps.splice(+b.dataset.i,1); renderApps(); });
+document.getElementById("appAdd").onclick=()=>{ readApps(); ui.apps.push({nome:"",mac:"",key:""}); renderApps(); const it=p.querySelectorAll(".aNome"); if(it.length) it[it.length-1].focus(); };
+};
+ui.readApps=readApps;
+document.getElementById("appsBtn").onclick=()=>{ readApps(); ui.appsOpen=!ui.appsOpen; if(ui.appsOpen && !ui.apps.length) ui.apps.push({nome:"",mac:"",key:""}); renderApps(); };
+renderApps();
 document.getElementById("fProv").onchange=e=>{
 ui.prov=e.target.value;
 const v=db.provValores[ui.prov];
 if(v!=null && v!==""){ ui.custo=+v; upLucro(); }
 };
 if(c && document.getElementById("undoLast")) document.getElementById("undoLast").onclick=()=>desfazerUltimo(c.id);
-if(c){ document.getElementById("recvBtn").onclick=()=>togglePaid(c.id); document.getElementById("delBtn").onclick=()=>delClient(c.id); }
+if(c){ const rb=document.getElementById("recvBtn"); if(rb) rb.onclick=()=>togglePaid(c.id); document.getElementById("delBtn").onclick=()=>delClient(c.id); }
 document.getElementById("saveBtn").onclick=saveClient;
 openSheet();
 }
@@ -970,6 +1065,7 @@ if(isPaid(c)){
 // desfazer: volta exatamente ao estado de antes do pagamento (se foi feito neste mês); senão, pago só até o mês anterior
 if(ult){ c.pagoAte=ult.antes; if(ult.inadDesde) c.inadDesde=ult.inadDesde; if(ult.atraso) db.recebAtraso[cm]=Math.max(0,(db.recebAtraso[cm]||0)-ult.valor); }
 else c.pagoAte=addMonths(cm,-1);
+{ const pa=ult&&ult.pgAntes; c.ultPagData=pa?pa.d:""; c.ultPagValor=pa?pa.v:""; }
 c.pagoAdiantado=false; c.pagamentos={}; delete c.ultimoPag;
 if(temCred && c.creditosDebitados){ db.provCreditos[prov] = (+db.provCreditos[prov]||0) + c.creditosDebitados; }
 c.creditosDebitados=0;
@@ -978,7 +1074,8 @@ toast("Pagamento desfeito");
 const meses=planoMeses(c.plano);
 const devido=mesDevido(c);              // inadimplente de mês anterior? o pagamento quita esse mês primeiro
 const inicio=devido||cm;
-c.ultimoPag={ym:cm, antes:paidUntil(c), inadDesde:c.inadDesde||null, atraso:!!devido, valor:+c.valor||0};
+c.ultimoPag={ym:cm, antes:paidUntil(c), inadDesde:c.inadDesde||null, atraso:!!devido, valor:+c.valor||0, pgAntes:{d:c.ultPagData||"", v:c.ultPagValor!=null?c.ultPagValor:""}};
+c.ultPagData=todayStr(); c.ultPagValor=+c.valor||0;
 c.pagoAte=addMonths(inicio, meses-1); c.pagoAdiantado=false; c.pagamentos={}; delete c.inadDesde;
 if(devido) db.recebAtraso[cm]=(db.recebAtraso[cm]||0)+(+c.valor||0);
 let msg;
@@ -1002,6 +1099,7 @@ const cm=curMonth(), u=c.ultimoPag; db.recebAtraso=db.recebAtraso||{};
 c.pagoAte=u.antes; if(u.inadDesde) c.inadDesde=u.inadDesde;
 if(u.atraso) db.recebAtraso[cm]=Math.max(0,(db.recebAtraso[cm]||0)-u.valor);
 if(c.provedor && db.provCreditos[c.provedor]!=null && c.creditosDebitados) db.provCreditos[c.provedor]=(+db.provCreditos[c.provedor]||0)+c.creditosDebitados;
+{ const pa=u.pgAntes; c.ultPagData=pa?pa.d:""; c.ultPagValor=pa?pa.v:""; }
 c.creditosDebitados=0; delete c.ultimoPag;
 toast("Pagamento desfeito"); save(); renderAll(); openEdit(id);
 }
@@ -1010,18 +1108,34 @@ const nome=document.getElementById("fNome").value.trim();
 if(!nome){ toast("Digite o nome do cliente"); return; }
 const valor=+document.getElementById("fValor").value||0;
 const custo=+ui.custo||0;
+const porData = ui.venc==="data";
+const venceEm = porData ? document.getElementById("fVenceEm").value : "";
+if(porData && !/^\d{4}-\d{2}-\d{2}$/.test(venceEm)){ toast("Informe a data de vencimento (dia, mês e ano)"); return; }
+if(ui.readApps) ui.readApps();
+const apps=(ui.apps||[]).map(a=>({nome:(a.nome||"").trim(), mac:fmtMac(a.mac), key:(a.key||"").trim()})).filter(a=>a.nome||a.mac||a.key);
+const macRuim=apps.find(a=>a.mac && a.mac.length!==17);
+if(macRuim){ toast("MAC incompleto"+(macRuim.nome?" em "+macRuim.nome:"")+" — use o formato E8:C1:07:E9:GE:86"); return; }
 const data={
-nome, dia:Math.min(31,Math.max(1,+document.getElementById("fDia").value||1)),
+nome, dia: porData ? Number(venceEm.slice(8,10)) : Math.min(31,Math.max(1,+document.getElementById("fDia").value||1)),
+apps, venceEm,
+ultPagData: document.getElementById("fPgData").value || "",
+ultPagValor: document.getElementById("fPgValor").value!=="" ? (+document.getElementById("fPgValor").value||0) : (document.getElementById("fPgData").value ? valor : ""),
 tipo:ui.tipo, plano:ui.plano, provedor:document.getElementById("fProv").value,
 valor, custo, lucro:valor-custo, obs:document.getElementById("fObs").value.trim(),
 situacao:ui.situacao,
 telefone:document.getElementById("fTel").value.replace(/\D/g,""),
 };
-if(ui.editId){ Object.assign(db.clients.find(x=>x.id===ui.editId), data); toast("Cliente atualizado"); }
+if(ui.editId){
+const alvo=db.clients.find(x=>x.id===ui.editId);
+const eraData=temData(alvo);
+Object.assign(alvo, data);
+if(porData){ alvo.pagoAte=venceEm.slice(0,7); alvo.pagoAdiantado=false; delete alvo.inadDesde; }
+else if(eraData){ alvo.pagoAte=addMonths(curMonth(),-1); }   // voltou para plano mensal: mês atual fica em aberto até marcar o pagamento
+toast("Cliente atualizado"); }
 else {
 const id=Math.max(0,...db.clients.map(c=>c.id))+1;
 const meses=planoMeses(data.plano); // novo cliente começa em dia pelo período do plano
-db.clients.push({id, ...data, pagamentos:{}, pagoAte:addMonths(curMonth(), meses-1), pagoAdiantado:false, creditosDebitados:0, lista:"NOVO"});
+db.clients.push({id, ...data, pagamentos:{}, pagoAte: porData ? venceEm.slice(0,7) : addMonths(curMonth(), meses-1), pagoAdiantado:false, creditosDebitados:0, lista:"NOVO"});
 toast("Cliente cadastrado ✓");
 }
 save(); renderAll(); closeSheet();
@@ -1087,8 +1201,8 @@ const tour=db.tourFeito; db=normalizeDb(d); db.tourFeito=tour||d.tourFeito; dele
 r.readAsText(f); e.target.value="";
 };
 function exportCsv(){
-const head=["Cliente","Telefone","Tipo","Provedor","Dia","Valor","Custo","Lucro","Situacao","PagoMesAtual","Obs"];
-const rows=db.clients.map(c=>[c.nome,c.telefone||"",c.tipo,c.provedor,c.dia,c.valor,c.custo,(c.valor-c.custo),c.situacao,isPaid(c)?"Sim":"Nao",c.obs||""]
+const head=["Cliente","Telefone","Tipo","Provedor","Dia","Valor","Custo","Lucro","Situacao","PagoMesAtual","Obs","VenceEm","Apps","UltimoPagamento","ValorPago"];
+const rows=db.clients.map(c=>[c.nome,c.telefone||"",c.tipo,c.provedor,c.dia,c.valor,c.custo,(c.valor-c.custo),c.situacao,isPaid(c)?"Sim":"Nao",c.obs||"",temData(c)?fmtData(c.venceEm):"",(c.apps||[]).map(a=>[a.nome,a.mac,a.key].filter(Boolean).join(" / ")).join(" | "),c.ultPagData?fmtData(c.ultPagData):"",c.ultPagData?c.ultPagValor:""]
 .map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","));
 const csv="﻿"+[head.join(","),...rows].join("\r\n");
 saveFile("gestor-clientes-"+todayStr()+".csv", csv);
@@ -1322,7 +1436,7 @@ const now=new Date(), y=now.getFullYear(), mo=now.getMonth(), todayD=now.getDate
 const dim=new Date(y,mo+1,0).getDate();
 const firstWd=new Date(y,mo,1).getDay();
 const map={};
-db.clients.filter(c=>c.situacao!=="cancelado").forEach(c=>{ const d=Math.min(c.dia,dim); (map[d]=map[d]||[]).push(c); });
+db.clients.filter(c=>c.situacao!=="cancelado" && (!temData(c) || c.venceEm.slice(0,7)===curMonth())).forEach(c=>{ const d=Math.min(c.dia,dim); (map[d]=map[d]||[]).push(c); });
 const wd=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 let cells="";
 for(let i=0;i<firstWd;i++) cells+=`<div class="calcell blank"></div>`;
@@ -1858,7 +1972,7 @@ const TOUR=[
 {sel:".searchwrap", t:"Buscar", d:"Encontre clientes pelo nome, provedor ou telefone."},
 {sel:"#chips", t:"Filtros", d:"Veja só quem está <b>A vencer</b> (até 2 dias), <b>Inadimplente</b>, <b>Em dia</b> ou cancelado."},
 {sel:".card", t:"Seu cliente", d:"Toque no cliente para editar, <b>registrar pagamento</b> e mandar mensagem no WhatsApp.<br><br><span class='tcor g'>verde</span> em dia · <span class='tcor w'>laranja</span> vence em até 2 dias · <span class='tcor b'>vermelho</span> inadimplente · <span class='tcor n'>cinza</span> em aberto"},
-{sel:"#fab", t:"Novo cliente", d:"Cadastre um cliente com nome, WhatsApp, plano, provedor, dia de vencimento e valor."},
+{sel:"#fab", t:"Novo cliente", d:"Cadastre um cliente com nome, WhatsApp, aplicativos (MAC e Key), provedor, plano mensal ou data de vencimento e valor."},
 {sel:"#btnToday", t:"Calendário", d:"Veja os vencimentos de cada dia do mês."},
 {sel:"#btnMenu", t:"Menu", d:"<b>Relatórios</b> de qualquer mês, créditos, provedores, sua <b>logo</b> e o <b>backup no Google Drive</b>."},
 {t:"Tudo pronto! ✅", d:"Seus dados ficam salvos na nuvem e você acessa de qualquer aparelho.<br><br>Toda semana o app lembra você de fazer um <b>backup</b> — escolha <b>Google Drive</b> para guardar a cópia.<br><br>Quando quiser, exclua o Cliente de exemplo. Para rever este guia: ⋮ → Ver tutorial."}
