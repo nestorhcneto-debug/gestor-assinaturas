@@ -758,6 +758,10 @@ function fmtData(ds){ const [y,m,d]=String(ds).split("-"); return d+"/"+m+"/"+y;
 function diasAte(ds){ const [y,m,d]=ds.split("-").map(Number); const h=new Date(); h.setHours(0,0,0,0); return Math.round((new Date(y,m-1,d)-h)/86400000); }
 // MAC no formato XX:XX:XX:XX:XX:XX (maiúsculas, 12 caracteres)
 function fmtMac(v){ const s=String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,12); return (s.match(/.{1,2}/g)||[]).join(":"); }
+// Quanto o cliente representa de faturamento NESTE mês: plano mensal = valor todo mês;
+// pacote por data = valor cheio do contrato, só no mês em que foi pago.
+function valorMes(c){ if(!temData(c)) return +c.valor||0; return (c.ultPagData && c.ultPagData.slice(0,7)===curMonth()) ? (+c.valor||0) : 0; }
+function recebidoMesDe(c){ return temData(c) ? valorMes(c) : (isPaid(c) ? (+c.valor||0) : 0); }
 function isPaid(c){
 if(c.situacao==="cancelado") return false;
 if(temData(c)) return diasAte(c.venceEm)>=0;
@@ -843,8 +847,8 @@ const FILTERS = [
 function computeKpis(){
 const act = db.clients.filter(c=>c.situacao!=="cancelado");
 const inad = act.filter(isInadimplente);
-const recebidoMes = act.filter(isPaid).reduce((s,c)=>s+(+c.valor||0),0) + ((db.recebAtraso&&db.recebAtraso[curMonth()])||0);
-const lucroPrev = act.reduce((s,c)=>s+((+c.valor||0)-(+c.custo||0)),0);
+const recebidoMes = act.reduce((s,c)=>s+recebidoMesDe(c),0) + ((db.recebAtraso&&db.recebAtraso[curMonth()])||0);
+const lucroPrev = act.reduce((s,c)=>s+(valorMes(c)-(+c.custo||0)),0);
 return { ativos:act.length, inad:inad.length, recebido:recebidoMes, lucro:lucroPrev };
 }
 function renderKpis(){
@@ -979,7 +983,7 @@ ${c?`<a class="wabtn ${waNumero(c.telefone)?"":"off"}" id="waBtn" target="_blank
 </div>
 <div class="row2">
 <div class="field" id="fldDia"><label>Dia vencimento</label><input type="number" id="fDia" min="1" max="31" value="${c?c.dia:todayDay()}"></div>
-<div class="field"><label>Valor cobrado (R$)</label><input type="number" id="fValor" min="0" step="1" value="${c?c.valor:35}"></div>
+<div class="field"><label id="lblValor">Valor cobrado (R$)</label><input type="number" id="fValor" min="0" step="1" value="${c?c.valor:35}"></div>
 </div>
 ${c?`<div class="ultpag">${c.ultPagData?`Último pagamento: <b>${brl(c.ultPagValor)}</b> em <b>${fmtData(c.ultPagData)}</b>`:"Último pagamento: nenhum registrado"}</div>`:""}
 <div class="field"><label>Lucro por mês</label>
@@ -1016,6 +1020,7 @@ document.querySelectorAll("#segVenc button").forEach(x=>x.classList.toggle("on",
 document.getElementById("fldPlano").classList.toggle("dis",d); document.getElementById("fPlano").disabled=d;
 document.getElementById("fldDia").classList.toggle("dis",d); document.getElementById("fDia").disabled=d;
 document.getElementById("fldData").classList.toggle("dis",!d); document.getElementById("fVenceEm").disabled=!d;
+document.getElementById("lblValor").textContent = d ? "Valor do pacote (R$)" : "Valor cobrado (R$)";
 };
 document.querySelectorAll("#segVenc button").forEach(b=>b.onclick=()=>{ ui.venc=b.dataset.v; applyVenc(); });
 applyVenc();
@@ -1332,13 +1337,13 @@ const MESES=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agos
 function monthLabel(ym){ const [y,m]=ym.split("-").map(Number); return MESES[m-1]+" "+y; }
 function reportData(){
 const act=db.clients.filter(c=>c.situacao!=="cancelado");
-const previsto=act.reduce((s,c)=>s+(+c.valor||0),0);
+const previsto=act.reduce((s,c)=>s+valorMes(c),0);
 const custo=act.reduce((s,c)=>s+(+c.custo||0),0);
-const recebidoMes=act.filter(isPaid).reduce((s,c)=>s+(+c.valor||0),0);
+const recebidoMes=act.reduce((s,c)=>s+recebidoMesDe(c),0);
 const atrasos=(db.recebAtraso&&db.recebAtraso[curMonth()])||0;   // atrasados de meses anteriores pagos neste mês
 const recebido=recebidoMes+atrasos;
 const byProv={};
-act.forEach(c=>{ const p=c.provedor||"— sem provedor"; (byProv[p]=byProv[p]||{n:0,fat:0,cus:0}); byProv[p].n++; byProv[p].fat+=+c.valor||0; byProv[p].cus+=+c.custo||0; });
+act.forEach(c=>{ const p=c.provedor||"— sem provedor"; (byProv[p]=byProv[p]||{n:0,fat:0,cus:0}); byProv[p].n++; byProv[p].fat+=valorMes(c); byProv[p].cus+=+c.custo||0; });
 return { previsto, custo, lucro:previsto-custo, recebido, aReceber:Math.max(0,previsto-recebidoMes), ativos:act.length,
 inad:act.filter(isInadimplente).length, byProv,
 p2p:act.filter(c=>c.tipo==="P2P").length, iptv:act.filter(c=>c.tipo==="IPTV").length };
