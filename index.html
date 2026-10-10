@@ -427,6 +427,7 @@ border-radius:18px;box-shadow:var(--shadow-lg);padding:22px 20px 18px;
 .appdel svg{width:17px;height:17px}
 .appadd{width:100%;padding:11px;border-radius:11px;border:1.5px dashed var(--border-strong);color:var(--brand-ink);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center;gap:7px}
 .appadd svg{width:16px;height:16px}
+.appitem input[type=date]{background:var(--surface)!important}
 .field input[type=date]{width:100%;padding:12px;border-radius:11px;background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
 .field.dis{opacity:.45}
 .field.dis input,.field.dis select{pointer-events:none}
@@ -933,7 +934,7 @@ ui.situacao = c? (c.situacao||"ativo") : "ativo";
 ui.prov = c? c.provedor : (db.provedores[0]||"");
 ui.plano = c? (c.plano||PLANOS[0]) : PLANOS[0];
 ui.venc = (c && temData(c)) ? "data" : "mensal";
-ui.apps = c && Array.isArray(c.apps) ? c.apps.map(a=>({nome:a.nome||"",mac:a.mac||"",key:a.key||""})) : [];
+ui.apps = c && Array.isArray(c.apps) ? c.apps.map(a=>({nome:a.nome||"",mac:a.mac||"",key:a.key||"",exp:a.exp||""})) : [];
 ui.appsOpen = false;
 ui.custo = c ? (+c.custo||0) : (db.provValores[ui.prov]!=null ? +db.provValores[ui.prov] : 0); // custo vem do provedor
 document.getElementById("sheetTitle").textContent = c ? "Editar cliente" : "Novo cliente";
@@ -1026,9 +1027,10 @@ document.querySelectorAll("#segVenc button").forEach(b=>b.onclick=()=>{ ui.venc=
 applyVenc();
 // --- aplicativos do cliente ---
 const readApps=()=>{ document.querySelectorAll("#appsPanel .appitem").forEach((el,i)=>{ if(!ui.apps[i]) return;
-ui.apps[i].nome=el.querySelector(".aNome").value; ui.apps[i].mac=el.querySelector(".aMac").value; ui.apps[i].key=el.querySelector(".aKey").value; }); };
+ui.apps[i].nome=el.querySelector(".aNome").value; ui.apps[i].mac=el.querySelector(".aMac").value; ui.apps[i].key=el.querySelector(".aKey").value; ui.apps[i].exp=el.querySelector(".aExp").value; }); };
 const renderApps=()=>{
-const n=ui.apps.filter(a=>(a.nome||a.mac||a.key||"").trim()).length;
+const n=ui.apps.filter(a=>(a.nome||a.mac||a.key||a.exp||"").trim()).length;
+const expTxt=ds=>{ if(!/^\d{4}-\d{2}-\d{2}$/.test(ds||"")) return ""; const df=diasAte(ds); return df<0 ? `<span style="color:var(--bad-ink);font-weight:700">App expirado há ${-df} dia${df===-1?"":"s"}</span>` : df===0 ? `<span style="color:var(--warn-ink);font-weight:700">Expira hoje</span>` : df<=7 ? `<span style="color:var(--warn-ink);font-weight:700">Expira em ${df} dia${df===1?"":"s"}</span>` : `Expira em ${fmtData(ds)}`; };
 document.getElementById("appsCnt").textContent = n ? n : "nenhum";
 document.getElementById("appsBtn").classList.toggle("open",ui.appsOpen);
 const p=document.getElementById("appsPanel"); p.classList.toggle("open",ui.appsOpen);
@@ -1037,13 +1039,15 @@ p.innerHTML = ui.apps.map((a,i)=>`<div class="appitem">
 <button type="button" class="appdel" data-i="${i}" aria-label="Remover app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button></div></div>
 <div><label>MAC</label><input type="text" class="aMac mono" value="${esc(a.mac)}" maxlength="17" placeholder="E8:C1:07:E9:GE:86" autocapitalize="characters" autocomplete="off" spellcheck="false"></div>
 <div><label>Key</label><input type="text" class="aKey mono" value="${esc(a.key)}" placeholder="Chave do app" autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+<div><label>Expiração do app</label><input type="date" class="aExp" value="${esc(a.exp||"")}"><div class="wahint aExpHint">${expTxt(a.exp)}</div></div>
 </div>`).join("") + `<button type="button" class="appadd" id="appAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Adicionar app</button>`;
 p.querySelectorAll(".aMac").forEach(inp=>inp.oninput=()=>{ inp.value=fmtMac(inp.value); });
+p.querySelectorAll(".aExp").forEach(inp=>inp.onchange=()=>{ inp.parentNode.querySelector(".aExpHint").innerHTML=expTxt(inp.value); });
 p.querySelectorAll(".appdel").forEach(b=>b.onclick=()=>{ readApps(); ui.apps.splice(+b.dataset.i,1); renderApps(); });
-document.getElementById("appAdd").onclick=()=>{ readApps(); ui.apps.push({nome:"",mac:"",key:""}); renderApps(); const it=p.querySelectorAll(".aNome"); if(it.length) it[it.length-1].focus(); };
+document.getElementById("appAdd").onclick=()=>{ readApps(); ui.apps.push({nome:"",mac:"",key:"",exp:""}); renderApps(); const it=p.querySelectorAll(".aNome"); if(it.length) it[it.length-1].focus(); };
 };
 ui.readApps=readApps;
-document.getElementById("appsBtn").onclick=()=>{ readApps(); ui.appsOpen=!ui.appsOpen; if(ui.appsOpen && !ui.apps.length) ui.apps.push({nome:"",mac:"",key:""}); renderApps(); };
+document.getElementById("appsBtn").onclick=()=>{ readApps(); ui.appsOpen=!ui.appsOpen; if(ui.appsOpen && !ui.apps.length) ui.apps.push({nome:"",mac:"",key:"",exp:""}); renderApps(); };
 renderApps();
 document.getElementById("fProv").onchange=e=>{
 ui.prov=e.target.value;
@@ -1113,7 +1117,7 @@ const porData = ui.venc==="data";
 const venceEm = porData ? document.getElementById("fVenceEm").value : "";
 if(porData && !/^\d{4}-\d{2}-\d{2}$/.test(venceEm)){ toast("Informe a data de vencimento (dia, mês e ano)"); return; }
 if(ui.readApps) ui.readApps();
-const apps=(ui.apps||[]).map(a=>({nome:(a.nome||"").trim(), mac:fmtMac(a.mac), key:(a.key||"").trim()})).filter(a=>a.nome||a.mac||a.key);
+const apps=(ui.apps||[]).map(a=>({nome:(a.nome||"").trim(), mac:fmtMac(a.mac), key:(a.key||"").trim(), exp:/^\d{4}-\d{2}-\d{2}$/.test(a.exp||"")?a.exp:""})).filter(a=>a.nome||a.mac||a.key||a.exp);
 const macRuim=apps.find(a=>a.mac && a.mac.length!==17);
 if(macRuim){ toast("MAC incompleto"+(macRuim.nome?" em "+macRuim.nome:"")+" — use o formato E8:C1:07:E9:GE:86"); return; }
 const data={
@@ -1202,7 +1206,7 @@ r.readAsText(f); e.target.value="";
 };
 function exportCsv(){
 const head=["Cliente","Telefone","Tipo","Provedor","Dia","Valor","Custo","Lucro","Situacao","PagoMesAtual","Obs","VenceEm","Apps","UltimoPagamento","ValorPago"];
-const rows=db.clients.map(c=>[c.nome,c.telefone||"",c.tipo,c.provedor,c.dia,c.valor,c.custo,(c.valor-c.custo),c.situacao,isPaid(c)?"Sim":"Nao",c.obs||"",temData(c)?fmtData(c.venceEm):"",(c.apps||[]).map(a=>[a.nome,a.mac,a.key].filter(Boolean).join(" / ")).join(" | "),c.ultPagData?fmtData(c.ultPagData):"",c.ultPagData?c.ultPagValor:""]
+const rows=db.clients.map(c=>[c.nome,c.telefone||"",c.tipo,c.provedor,c.dia,c.valor,c.custo,(c.valor-c.custo),c.situacao,isPaid(c)?"Sim":"Nao",c.obs||"",temData(c)?fmtData(c.venceEm):"",(c.apps||[]).map(a=>[a.nome,a.mac,a.key,a.exp?"expira "+fmtData(a.exp):""].filter(Boolean).join(" / ")).join(" | "),c.ultPagData?fmtData(c.ultPagData):"",c.ultPagData?c.ultPagValor:""]
 .map(v=>`"${String(v).replace(/"/g,'""')}"`).join(","));
 const csv="﻿"+[head.join(","),...rows].join("\r\n");
 saveFile("gestor-clientes-"+todayStr()+".csv", csv);
